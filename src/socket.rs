@@ -539,9 +539,23 @@ async fn run_once(
                 }
             }
             Some(frame) = out_rx.recv() => {
+                let out_cmd = frame.get(1..3).map(|b| u16::from_le_bytes([b[0], b[1]]));
+                let is_sync = matches!(
+                    out_cmd,
+                    Some(CMD_SYNC_REQUEST | CMD_SYNC_ACK_DELETE | CMD_SYNC_MOBILE_WAKE_UP)
+                );
                 if authed {
                     ws.send(Message::Binary(frame.into())).await?;
                     trace("-> outbound ws frame");
+                    if is_sync {
+                        crate::logger::log_sync(&format!("WS ra cmd={}: đã gửi", out_cmd.unwrap_or(0)));
+                    }
+                } else if is_sync {
+                    // Dropped: the socket is not authenticated yet (reconnecting/startup).
+                    crate::logger::log_sync(&format!(
+                        "WS ra cmd={}: BỎ vì socket chưa xác thực",
+                        out_cmd.unwrap_or(0)
+                    ));
                 }
             }
             incoming = ws.next() => {
