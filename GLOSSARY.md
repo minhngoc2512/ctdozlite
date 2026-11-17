@@ -42,6 +42,10 @@ Ubiquitous language for `ctdozlite`. Use these terms verbatim in issues, ADRs, t
 | **UI thread** | The egui/ratatui event loop; must never block on I/O. | "frontend" |
 | **Store** | Local SQLite database managed by `MessageStore`. | "cache" (cache is non-authoritative) |
 | **Call** | VoIP session (audio/video) handled by `src/call.rs` and `src/audio.rs`. | "phone" |
+| **Archive** | The user's S3-compatible bucket holding immutable copies of messages and media (ADR-0004), managed by `src/archive/`. | "cloud backup", "sync" (Zalo sync is a different thing) |
+| **Segment** | One archive object holding a batch of message rows of a single thread; a row's current segment is `messages.archive_seg`. | "chunk", "backup file" |
+| **Vault** | `vault.json` at the archive root: Argon2id salt, parameters and a check blob that confirms the passphrase; never contains a key. | "keystore" |
+| **Retention** | Per-account local limits (days, DB size, media size); only removes rows/files already in the archive. | "cleanup", "quota" |
 
 ## Invariants
 

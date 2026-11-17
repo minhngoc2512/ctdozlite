@@ -287,8 +287,81 @@ impl MessageStore {
             Self::heal_sync_v2_misdecoded_rows(&conn)?;
             conn.execute_batch("PRAGMA user_version = 2;")?;
         }
+        if user_ver < 3 {
+            Self::migrate_v3_archive(&conn)?;
+        }
 
         Ok(Self { conn })
+    }
+
+    /// Migration `user_version = 3` (ADR-0004): track which message rows are in the
+    /// object-storage archive.
+    ///
+    /// - `messages.archive_seg`: key of the segment holding the row's current content, or
+    ///   `NULL` while the row still has to be archived.
+    /// - Trigger `messages_archive_dirty`: a real change to an archived row's content clears
+    ///   `archive_seg`, so every writer (upsert, recall, vanish, thread merge) re-queues it
+    ///   without knowing about the archive. Re-delivering identical content changes nothing.
+    /// - `archive_segments` / `archive_media`: what has been uploaded.
+    /// - Partial index for `WHERE archive_seg IS NULL` (backup batch query, see
+    ///   `archive::db::unarchived_batch`).
+    fn migrate_v3_archive(conn: &Connection) -> Result<()> {
+        // Re-runnable: a DB whose user_version was lowered (restored backup, older build)
+        // may already have the column.
+        let has_column: bool = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('messages') WHERE name = 'archive_seg'",
+            [],
+            |r| r.get::<_, i64>(0).map(|n| n > 0),
+        )?;
+        let add_column = if has_column {
+            ""
+        } else {
+            "ALTER TABLE messages ADD COLUMN archive_seg TEXT;"
+        };
+        conn.execute_batch(&format!(
+            "BEGIN;
+             {add_column}
+             CREATE INDEX IF NOT EXISTS idx_messages_unarchived
+                 ON messages(thread_id, ts) WHERE archive_seg IS NULL;
+             CREATE TABLE IF NOT EXISTS archive_segments (
+                 seg_key TEXT PRIMARY KEY,
+                 thread_id TEXT NOT NULL,
+                 ts_min INTEGER NOT NULL,
+                 ts_max INTEGER NOT NULL,
+                 msg_count INTEGER NOT NULL,
+                 size_bytes INTEGER NOT NULL DEFAULT 0,
+                 uploaded_at INTEGER NOT NULL DEFAULT 0,
+                 restored_at INTEGER NOT NULL DEFAULT 0,
+                 seq INTEGER NOT NULL DEFAULT 0
+             );
+             CREATE INDEX IF NOT EXISTS idx_archive_segments_thread
+                 ON archive_segments(thread_id, ts_min);
+             CREATE TABLE IF NOT EXISTS archive_media (
+                 cache_name TEXT PRIMARY KEY,
+                 sha256 TEXT NOT NULL,
+                 size_bytes INTEGER NOT NULL,
+                 uploaded_at INTEGER NOT NULL
+             );
+             CREATE TRIGGER IF NOT EXISTS messages_archive_dirty
+             AFTER UPDATE OF text, raw_json, msg_type, thread_id, sender_name ON messages
+             WHEN OLD.archive_seg IS NOT NULL
+                  AND NEW.archive_seg IS OLD.archive_seg
+                  AND (OLD.text IS NOT NEW.text
+                       OR OLD.raw_json IS NOT NEW.raw_json
+                       OR OLD.msg_type IS NOT NEW.msg_type
+                       OR OLD.thread_id IS NOT NEW.thread_id
+                       OR OLD.sender_name IS NOT NEW.sender_name)
+             BEGIN
+                 UPDATE messages SET archive_seg = NULL WHERE msg_id = NEW.msg_id;
+             END;
+             PRAGMA user_version = 3;
+             COMMIT;"
+        ))
+        .inspect_err(|_| {
+            // Best effort: leave no open transaction behind; the original error is returned.
+            let _ = conn.execute_batch("ROLLBACK;");
+        })?;
+        Ok(())
     }
 
     /// One-time migration (`user_version = 2`): repairs Sync V2 messages that were previously

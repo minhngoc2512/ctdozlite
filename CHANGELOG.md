@@ -5,6 +5,9 @@ Xem thêm quy ước tại [ADR 0003 — Chính sách Changelog & Release Notes]
 
 ## [Unreleased]
 
+### Added (Tính năng mới & Cập nhật)
+- **Lõi lưu trữ phân tầng lên S3/R2/GCS/MinIO (`src/archive/`, [ADR-0004](docs/adr/0004-tiered-message-archive.md)):** Sao lưu tin nhắn (theo segment bất biến từng hội thoại) và media (theo mã băm nội dung) của từng tài khoản lên bucket tương thích S3, mã hoá AES-256-GCM tuỳ chọn với khoá Argon2id; tải lại tin cũ theo nhu cầu, khôi phục sang máy khác, và dọn dữ liệu ở máy theo số ngày/dung lượng (chỉ xoá phần đã có trên bucket). Migration SQLite `user_version = 3`. Giao diện cấu hình sẽ có ở bản sau.
+
 ### Fixed (Sửa lỗi)
 - **Linux: dữ liệu không còn phụ thuộc thư mục khởi chạy (`src/data_dir.rs`):** Bản Linux lưu phiên, lịch sử tin nhắn và cache vào `$XDG_DATA_HOME/ctdozlite` (mặc định `~/.local/share/ctdozlite`) thay vì thư mục làm việc, nên mở từ menu hay terminal đều thấy cùng dữ liệu. Lần đầu chạy, dữ liệu cũ ở thư mục làm việc hoặc `~` được tự sao chép sang (bản gốc giữ nguyên).
 
