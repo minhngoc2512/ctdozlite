@@ -9296,8 +9296,14 @@ pub fn send_sync_v2_request_with_queries(
     let sync_data_clone = sync_data.clone();
     let sync_id_str = sync_id.to_string();
     tokio::spawn(async move {
-        if let Ok(resp) = request_phone_sync_v2_http(&s_clone, &sync_id_str, &sync_data_clone).await {
-            crate::logger::log_sync(&format!("12888 http request-sync: {resp:?}"));
+        // Log only the status fields: the body may echo key material.
+        match request_phone_sync_v2_http(&s_clone, &sync_id_str, &sync_data_clone).await {
+            Ok(resp) => crate::logger::log_sync(&format!(
+                "http request-sync: error_code={:?} error_message={:?}",
+                resp.get("error_code"),
+                resp.get("error_message").and_then(Value::as_str).unwrap_or("")
+            )),
+            Err(e) => crate::logger::log_sync(&format!("http request-sync LỖI: {e:#}")),
         }
     });
     crate::logger::log_sync(&format!(
@@ -9415,6 +9421,9 @@ pub fn extract_mobile_sync_controls(data_node: &Value) -> Vec<MobileSyncControlE
             continue;
         }
         let act = c.get("act").and_then(Value::as_str).unwrap_or_default();
+        if act_type != "transfer_sync2" {
+            crate::logger::log_sync(&format!("ctrl {act_type}: act={act}"));
+        }
         let parsed_data: Value = match c.get("data") {
             Some(Value::String(s)) => serde_json::from_str(s).unwrap_or(Value::Null),
             Some(v) => v.clone(),
