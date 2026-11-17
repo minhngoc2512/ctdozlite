@@ -9303,7 +9303,15 @@ pub fn send_sync_v2_request_with_queries(
                 resp.get("error_code"),
                 resp.get("error_message").and_then(Value::as_str).unwrap_or("")
             )),
-            Err(e) => crate::logger::log_sync(&format!("http request-sync LỖI: {e:#}")),
+            // Drop the query string: it carries the encrypted request params.
+            Err(e) => {
+                let msg = format!("{e:#}");
+                let msg = match msg.split_once('?') {
+                    Some((head, _)) => format!("{head}?…"),
+                    None => msg,
+                };
+                crate::logger::log_sync(&format!("http request-sync LỖI: {msg}"));
+            }
         }
     });
     crate::logger::log_sync(&format!(
