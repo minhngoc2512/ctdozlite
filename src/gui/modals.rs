@@ -1644,6 +1644,7 @@ impl ZaloGuiApp {
                                             (SettingsTab::Notifications, lucide::BELL, "Thông báo"),
                                             (SettingsTab::Messages, lucide::MESSAGE_SQUARE, "Tin nhắn"),
                                             (SettingsTab::Utilities, lucide::SLIDERS, "Tiện ích"),
+                                            (SettingsTab::Storage, lucide::CLOUD, "Lưu trữ & Sao lưu"),
                                             (SettingsTab::Update, lucide::SPARKLES, "Cập nhật"),
                                         ];
                                         for (tab, icon, title) in tabs {
@@ -1770,6 +1771,7 @@ impl ZaloGuiApp {
                                         SettingsTab::Notifications => "Thông báo",
                                         SettingsTab::Messages => "Tin nhắn",
                                         SettingsTab::Utilities => "Tiện ích",
+                                        SettingsTab::Storage => "Lưu trữ & Sao lưu",
                                         SettingsTab::Update => "Cập nhật",
                                     };
                                     ui.label(
@@ -3757,6 +3759,9 @@ impl ZaloGuiApp {
                                                     ui.add_space(4.0);
                                                     ui.label(RichText::new("Env CTDOZ_BASE_URL / CTDOZ_API_KEY / CTDOZ_MODEL luôn thắng settings.").color(pal.text_muted).size(11.0));
                                                 });
+                                        }
+                                        SettingsTab::Storage => {
+                                            self.render_archive_settings(ui, &pal);
                                         }
                                         SettingsTab::Update => {
                                             let cur_ver = env!("CARGO_PKG_VERSION");

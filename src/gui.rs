@@ -21,6 +21,8 @@ use crate::logger::{self, FindingLevel, LogEntry, ScanFinding};
 use crate::qr::QrLogin;
 use crate::session::Session;
 
+mod archive_settings;
+pub mod archive_worker;
 mod attachments;
 pub(crate) mod messages;
 mod modals;
@@ -913,6 +915,17 @@ pub enum GuiEvent {
         url: String,
         result: Result<(String, String), String>,
     },
+    /// Current `archive.json` for the settings form.
+    ArchiveConfigLoaded(Result<crate::archive::config::ArchiveConfig, String>),
+    /// Result of "Kết nối" in the archive settings: the saved config.
+    ArchiveConnected(Result<crate::archive::config::ArchiveConfig, String>),
+    ArchiveSaved(Result<crate::archive::config::ArchiveConfig, String>),
+    /// `Ok(None)`: skipped because another backup/restore was running.
+    ArchiveBackupDone {
+        reason: archive_worker::BackupReason,
+        result: Result<Option<(crate::archive::engine::BackupReport, i64)>, String>,
+    },
+    ArchiveRestoreDone(Result<crate::archive::engine::RestoreReport, String>),
     /// Worker đã tải + trích text xem trước tài liệu (session-only).
     DocPreviewReady {
         msg_id: String,
@@ -1124,6 +1137,7 @@ enum SettingsTab {
     Notifications,
     Messages,
     Utilities,
+    Storage,
     Update,
 }
 fn settings_default_true() -> bool {
@@ -1514,6 +1528,8 @@ pub struct ZaloGuiApp {
     toast_notice: Option<(String, std::time::Instant)>,
     /// Saved file shown by the current toast's "Mở thư mục" button, if any.
     toast_reveal_path: Option<String>,
+    /// "Lưu trữ & Sao lưu" settings state and backup scheduling (ADR-0004).
+    archive_ui: archive_settings::ArchiveUi,
     /// Rich corner notification popup for incoming messages
     incoming_popup: Option<IncomingPopupState>,
     phone_modal_open: bool,
@@ -1902,6 +1918,7 @@ impl ZaloGuiApp {
             logout_confirm_open: false,
             toast_notice: None,
             toast_reveal_path: None,
+            archive_ui: Default::default(),
             incoming_popup: None,
             phone_modal_open: false,
             phone_modal_input: String::new(),
@@ -4049,6 +4066,13 @@ impl ZaloGuiApp {
                         call.error_reason = Some(reason);
                     }
                 }
+                GuiEvent::ArchiveConfigLoaded(result) => self.archive_on_config(result, false),
+                GuiEvent::ArchiveConnected(result) => self.archive_on_config(result, true),
+                GuiEvent::ArchiveSaved(result) => self.archive_on_saved(result),
+                GuiEvent::ArchiveBackupDone { reason, result } => {
+                    self.archive_on_backup(ctx, reason, result)
+                }
+                GuiEvent::ArchiveRestoreDone(result) => self.archive_on_restore(result),
                 GuiEvent::StatusUpdate(msg) => {
                     self.status_msg = msg;
                 }
@@ -4722,8 +4746,10 @@ impl eframe::App for ZaloGuiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.ensure_windows_frameless_subclass(ctx);
 
-        if ctx.input(|i| i.modifiers.ctrl && i.key_pressed(Key::Q))
-            || ctx.input(|i| i.viewport().close_requested())
+        self.archive_tick(ctx);
+        if (ctx.input(|i| i.modifiers.ctrl && i.key_pressed(Key::Q))
+            || ctx.input(|i| i.viewport().close_requested()))
+            && !self.archive_defer_close(ctx)
         {
             self.allow_quit = true;
             if let Some(tx) = WORKER_TX.get() {

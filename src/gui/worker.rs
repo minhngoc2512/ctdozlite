@@ -586,6 +586,24 @@ pub enum WorkerCmd {
         /// Display name or title; used as the file name when it looks like one.
         file_name: String,
     },
+    /// Read `archive.json` for the settings form; answered with `ArchiveConfigLoaded`.
+    ArchiveLoadConfig,
+    /// Unlock/create the vault, probe the bucket and save the config as enabled.
+    ArchiveConnect {
+        cfg: crate::archive::config::ArchiveConfig,
+        passphrase: String,
+    },
+    /// Save retention/schedule/enable changes without contacting the bucket.
+    ArchiveSave {
+        cfg: crate::archive::config::ArchiveConfig,
+    },
+    /// Back up the logged-in account; `keep_threads` are never pruned (open chat).
+    ArchiveBackup {
+        reason: super::archive_worker::BackupReason,
+        keep_threads: Vec<String>,
+    },
+    /// Restore the logged-in account from the bucket, then refresh threads.
+    ArchiveRestore,
     /// Tải bytes tài liệu (giới hạn 10MB) + trích text xem trước trong app.
     FetchDocPreview {
         msg_id: String,
@@ -2602,6 +2620,21 @@ pub(super) fn spawn_session_worker(session: Session, gui_tx: GuiTx, egui_ctx: eg
                                     };
                                     let mut t_list = vec![t];
                                     let uin = s.login.as_ref().map(|l| l.uin.as_str()).unwrap_or_default();
+                                    // ADR-0004: rows pruned locally come back from the archive
+                                    // before the SQLite page is read, then Zalo is asked as usual.
+                                    match super::archive_worker::backfill_older(uin, &group_id, have).await {
+                                        Ok(0) => {}
+                                        Ok(n) => {
+                                            let _ = gui_tx_clone.send(GuiEvent::StatusUpdate(format!(
+                                                "Đã tải {n} tin cũ từ kho lưu trữ"
+                                            )));
+                                        }
+                                        Err(e) => {
+                                            let _ = gui_tx_clone.send(GuiEvent::StatusUpdate(format!(
+                                                "⚠️ Không tải được tin cũ từ kho lưu trữ: {e}"
+                                            )));
+                                        }
+                                    }
                                     let db_path = crate::store::db_path_for_account(uin);
                                     crate::store::load_history_into_threads(
                                         &db_path,
@@ -4591,6 +4624,68 @@ pub(super) fn spawn_session_worker(session: Session, gui_tx: GuiTx, egui_ctx: eg
                                 };
                                 let _ = gui_tx_clone.send(GuiEvent::ProxyUpdated(res));
                                 ctx_clone.request_repaint();
+                            });
+                        }
+                        WorkerCmd::ArchiveLoadConfig => {
+                            let gui_tx_clone = gui_tx.clone();
+                            tokio::spawn(async move {
+                                let result = super::archive_worker::read_config().await;
+                                let _ = gui_tx_clone.send(GuiEvent::ArchiveConfigLoaded(result));
+                            });
+                        }
+                        WorkerCmd::ArchiveConnect { cfg, passphrase } => {
+                            let gui_tx_clone = gui_tx.clone();
+                            tokio::spawn(async move {
+                                let result = super::archive_worker::connect(cfg, passphrase).await;
+                                let _ = gui_tx_clone.send(GuiEvent::ArchiveConnected(result));
+                            });
+                        }
+                        WorkerCmd::ArchiveSave { cfg } => {
+                            let gui_tx_clone = gui_tx.clone();
+                            tokio::spawn(async move {
+                                let result = super::archive_worker::save(cfg).await;
+                                let _ = gui_tx_clone.send(GuiEvent::ArchiveSaved(result));
+                            });
+                        }
+                        WorkerCmd::ArchiveBackup {
+                            reason,
+                            keep_threads,
+                        } => {
+                            let session_clone = session.clone();
+                            let gui_tx_clone = gui_tx.clone();
+                            tokio::spawn(async move {
+                                let uin = session_clone
+                                    .lock()
+                                    .await
+                                    .login
+                                    .as_ref()
+                                    .map(|l| l.uin.clone())
+                                    .unwrap_or_default();
+                                let result =
+                                    super::archive_worker::backup(uin, keep_threads).await;
+                                let _ = gui_tx_clone
+                                    .send(GuiEvent::ArchiveBackupDone { reason, result });
+                            });
+                        }
+                        WorkerCmd::ArchiveRestore => {
+                            let session_clone = session.clone();
+                            let gui_tx_clone = gui_tx.clone();
+                            tokio::spawn(async move {
+                                let uin = session_clone
+                                    .lock()
+                                    .await
+                                    .login
+                                    .as_ref()
+                                    .map(|l| l.uin.clone())
+                                    .unwrap_or_default();
+                                let result = super::archive_worker::restore(uin).await;
+                                let ok = result.is_ok();
+                                let _ = gui_tx_clone.send(GuiEvent::ArchiveRestoreDone(result));
+                                if ok {
+                                    if let Some(tx) = WORKER_TX.get() {
+                                        let _ = tx.send(WorkerCmd::RefreshThreads);
+                                    }
+                                }
                             });
                         }
                         WorkerCmd::DownloadFile {

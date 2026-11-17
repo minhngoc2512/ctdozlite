@@ -69,6 +69,8 @@ pub struct ArchiveConfig {
     pub auto_backup_hours: u32,
     /// Keyed by account UIN.
     pub retention: BTreeMap<String, Retention>,
+    /// Last successful backup per account UIN, epoch ms (drives the schedule).
+    pub last_backup_ms: BTreeMap<String, i64>,
 }
 
 impl Default for ArchiveConfig {
@@ -89,6 +91,7 @@ impl Default for ArchiveConfig {
             device_id: String::new(),
             auto_backup_hours: 6,
             retention: BTreeMap::new(),
+            last_backup_ms: BTreeMap::new(),
         }
     }
 }
@@ -111,6 +114,7 @@ impl std::fmt::Debug for ArchiveConfig {
             .field("device_id", &self.device_id)
             .field("auto_backup_hours", &self.auto_backup_hours)
             .field("retention", &self.retention)
+            .field("last_backup_ms", &self.last_backup_ms)
             .finish()
     }
 }
