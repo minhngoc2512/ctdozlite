@@ -1204,6 +1204,7 @@ dependencies = [
  "hmac 0.12.1",
  "image",
  "ksni",
+ "libc",
  "lzma-rs",
  "md-5",
  "opus",
