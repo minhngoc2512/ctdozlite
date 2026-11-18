@@ -2051,13 +2051,7 @@ pub(super) fn render_message_body(
                 key.clone(),
                 thumb_url.to_string(),
             );
-            let open_target = msg
-                .link_url
-                .as_deref()
-                .filter(|u| !u.is_empty() && crate::chat::is_safe_external_image_url(u))
-                .or(Some(thumb_url).filter(|u| crate::chat::is_safe_external_image_url(u)))
-                .unwrap_or(thumb_url)
-                .to_string();
+            let open_target = photo_open_target(msg, thumb_url);
             let title_label = msg
                 .link_title
                 .as_deref()
@@ -3472,6 +3466,16 @@ pub(super) fn is_zalo_file_or_video_message(msg: &ChatMessage) -> bool {
             let l = u.to_ascii_lowercase();
             l.contains("/renewmedia") || l.contains("video-") || l.contains(".dlmd.me")
         })
+}
+
+/// Full-size URL the image viewer opens for a photo message (falls back to the thumb).
+pub(super) fn photo_open_target(msg: &ChatMessage, thumb_url: &str) -> String {
+    msg.link_url
+        .as_deref()
+        .filter(|u| !u.is_empty() && crate::chat::is_safe_external_image_url(u))
+        .or(Some(thumb_url).filter(|u| crate::chat::is_safe_external_image_url(u)))
+        .unwrap_or(thumb_url)
+        .to_string()
 }
 
 pub(super) fn photo_primary_url(msg: &ChatMessage) -> Option<&str> {
