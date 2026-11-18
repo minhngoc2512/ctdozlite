@@ -2,6 +2,7 @@ pub mod account_manager;
 /// Tiered message/media archive on S3-compatible storage (ADR-0004).
 pub mod archive;
 pub mod audio;
+pub mod autostart;
 pub mod background_accounts;
 pub mod call;
 pub mod chat;
