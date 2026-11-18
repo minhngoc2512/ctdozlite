@@ -191,6 +191,8 @@ impl ZaloGuiApp {
             keep_threads: keep,
         });
         ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+        // Quitting was asked for: hide the window now, finish the backup in the background.
+        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
         self.show_toast("⏳ Đang sao lưu trước khi thoát (tối đa 10 giây)…");
         true
     }
