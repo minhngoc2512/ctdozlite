@@ -1602,6 +1602,8 @@ pub struct ZaloGuiApp {
     /// Attachments sent but not yet in the thread, shown as placeholder bubbles.
     outgoing_uploads: Vec<OutgoingUpload>,
     next_upload_id: u64,
+    /// Last measured height of each chat row (see `chat_row_key`), for viewport-only rendering.
+    chat_row_heights: HashMap<u64, f32>,
     unread_counts: HashMap<String, usize>,
     reaction_unread_counts: HashMap<String, usize>,
     /// Message IDs that have already triggered an unread bump/notification in this session (#146).
@@ -1995,6 +1997,7 @@ impl ZaloGuiApp {
             pending_attachments: Vec::new(),
             outgoing_uploads: Vec::new(),
             next_upload_id: 1,
+            chat_row_heights: HashMap::new(),
             unread_counts: HashMap::new(),
             reaction_unread_counts: HashMap::new(),
             notified_msg_ids: HashSet::new(),
